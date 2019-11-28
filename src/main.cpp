@@ -13,8 +13,44 @@
  * Some interesting links:
  * MMA: https://www.baldengineer.com/measure-pwm-current.html
  * 
+ * Frequency from interrupt
+ * https://esp32.com/viewtopic.php?t=6533
+ * 
+ * TODO: Allow choice between fixed/set PWM freq and measured
+ * 
  **/
 #include "BluetoothSerial.h"
+#include "RunningAverage.h"
+
+// Argument type defines
+#define ARGUMENT_TYPE_NONE            0
+#define ARGUMENT_TYPE_LONG            1
+#define ARGUMENT_TYPE_DOUBLE          2
+#define ARGUMENT_TYPE_STRING          3
+
+// Defines
+// Motor to Zeo rotation conversion factor
+#define MOTOR_ZEO_GEARING_FACTOR      0.25
+// The 'pin' the LED is on - In the case of NodeMCU pin2 is the onboard led
+#define LED_PIN                       2
+// DEVKIT V1 uses pin 23
+// #define LED_PIN               23
+// The PWM channel for the LED 0 to 15
+#define LED_PWM_CHANNEL               0
+// PWM resolution in bits
+#define LED_PWM_RESOLUTION            8
+
+// Frequency measure
+#define FREQ_MEASURE_PIN              20
+#define FREQ_MEASURE_TIMER            1
+#define FREQ_MEASURE_TIMER_PRESCALAR  80
+#define FREQ_MEASURE_TIMER_COUNT_UP   true
+#define FREQ_MEASURE_TIMER_PERIOD     FREQ_MEASURE_TIMER_PRESCALAR/F_CPU
+#define FREQ_MEASUER_SAMPLE_NUM       16
+// this returns a pointer to the hw_timer_t global variable
+// 0 = first timer
+// 80 is prescaler so 80MHZ divided by 80 = 1MHZ signal ie 0.000001 of a second
+// true - counts up
 
 //Timers and counters and things
 /** Timer and process control **/
@@ -34,21 +70,32 @@ void IRAM_ATTR onTimer(){
   // It is safe to use digitalRead/Write here if you want to toggle an output
 }
 
-// Argument type defines
-#define ARGUMENT_TYPE_NONE    0
-#define ARGUMENT_TYPE_LONG    1
-#define ARGUMENT_TYPE_STRING  2
- 
+/** Timer for measuring freq **/
+volatile uint64_t StartValue;                     // First interrupt value
+bool fAdded = false;
 
-// Defines
-// The 'pin' the LED is on - In the case of NodeMCU pin2 is the onboard led
-#define LED_PIN               2
-// DEVKIT V1 uses pin 23
-// #define LED_PIN               23
-// The PWM channel for the LED 0 to 15
-#define LED_PWM_CHANNEL       0
-// PWM resolution in bits
-#define LED_PWM_RESOLUTION    8
+hw_timer_t * fTimer = NULL;                       // pointer to a variable of type hw_timer_t 
+portMUX_TYPE fTimerMux = portMUX_INITIALIZER_UNLOCKED;  // synchs between maon cose and interrupt?
+
+// Setup the running average
+RunningAverage frequencyRA(FREQ_MEASUER_SAMPLE_NUM);
+
+// Digital Event Interrupt
+// Enters on falling edge in this example
+//=======================================
+void IRAM_ATTR handleFrequencyMeasureInterrupt()
+{
+  portENTER_CRITICAL_ISR(&fTimerMux);
+      // value of timer at interrupt
+      uint64_t TempVal= timerRead(fTimer);
+      // Add period to RunningAverage, period is in number of FREQ_MEASURE_TIMER_PERIOD
+      // Note: Is timer overflow safe
+      frequencyRA.addValue(TempVal - StartValue);
+      // puts latest reading as start for next calculation
+      StartValue = TempVal;
+      fAdded = true;
+  portEXIT_CRITICAL_ISR(&fTimerMux);
+}
 
 // Create a BluetoothSerial thingee
 BluetoothSerial SerialBT;
@@ -60,16 +107,29 @@ String messages;
 // A 'struct' is an object containing other variables
 // This defines the struct data type
 struct ProgramVars {
-  long pwmFreq;
-  long pwmDutyThou;
-  bool ledEnable;
-  bool logging;
-  bool stateChange;
-  String randomString;
+  long    pwmFreq;
+  long    setFreq;
+  bool    useSetFreq;
+  long    pwmDutyThou;
+  long    freqDelta;
+  double  freqConversionFactor;
+  bool    ledEnable;
+  bool    logging;
+  bool    stateChange;
+  String  randomString;
 };
 // This creates a new variable which is of the above struct type
 ProgramVars programVars = {
-  0, 0, true, false, false, ""
+  0,      // pwmFreq
+  0,      // setFreq
+  false,  // useSetFreq
+  100,    // pwmDutyThou
+  0,      // freqDelta
+  MOTOR_ZEO_GEARING_FACTOR, // freqConversionFactor
+  true,   // ledEnable
+  false,  //  logging
+  false,  // stateChange
+  ""      //randomString
 };
 
 
@@ -112,7 +172,7 @@ ProgramVars programVars = {
       *targetInt = intTemp;
       return EXIT_SUCCESS;
     // If the input string is literally "0" no problem
-    } else if ( inputString == "0") {
+    } else if (inputString == "0") {
       *targetInt = 0;
       return EXIT_SUCCESS;
     // Otherwise there was a problem
@@ -187,6 +247,24 @@ ProgramVars programVars = {
     }
     return false;
   }
+
+  /** The standard OP for getting/setting/displaying command and args
+   * There are two semi identical forms of this function, one where the 
+   * argument is a number (long), and one where it is a string
+   **/
+  boolean argDisplayOrSetDoubleFromLong(String argName, CommandAndArguments comAndArg, double *var, uint16_t denominator, String *message) {
+    if (comAndArg.argType == ARGUMENT_TYPE_NONE) {
+      *message = argName + " is : " + String(*var);
+      return false;
+    }
+    if (comAndArg.argType == ARGUMENT_TYPE_LONG) {
+      *var = 1.0 * comAndArg.argLong / denominator;
+      *message = "Set '" + argName + "' to : " + String(*var);
+      return true;
+    }
+    return false;
+  }
+
   // String version
   boolean argDisplayOrSetString(String argName, CommandAndArguments comAndArg, String *var, String *message) {
     if (comAndArg.argType == ARGUMENT_TYPE_NONE) {
@@ -257,14 +335,27 @@ ProgramVars programVars = {
       *message = String("Help: \n") + 
         String("Commands will return current value if no argument given, and set to value if given\n") +
         String("'p': PWM frequency in HZ\n") +
+        String("'P': Whether to measure frequency or use frequency set by 'p'\n") +
         String("'d': PWM duty cycle 0-reolution max (ie 255 for 8 bit)\n") +
-        String("'l': Enable (1), or disable (0) logging");
+        String("'D': Frequency delta to apply to measured frequency in Hz\n") +
+        String("'r': Rotational gearing ratio * 1000 \n") +
+        String("'l': Enable (1), or disable (0) led\n") +
+        String("'L': Enable (1), or disable (0) logging");
       break;
     case 'p':
-      progVars->stateChange = argDisplayOrSetLong("pwmFreq", comArgState, &progVars->pwmFreq, message);
+      progVars->stateChange = argDisplayOrSetLong("useSetFreq", comArgState, &progVars->setFreq, message);
+      break;
+    case 'P':
+      progVars->stateChange = argDisplayOrSetBoolean("useSetFreq", comArgState, &progVars->useSetFreq, message);
       break;
     case 'd':
       progVars->stateChange = argDisplayOrSetLong("pwmDuty", comArgState, &progVars->pwmDutyThou, message);
+      break;
+    case 'D':
+      progVars->stateChange = argDisplayOrSetLong("freqDelta", comArgState, &progVars->freqDelta, message);
+      break;
+    case 'r':
+      progVars->stateChange = argDisplayOrSetDoubleFromLong("freqConversionFactor", comArgState, &progVars->freqConversionFactor, 1000, message);
       break;
     case 's':
       progVars->stateChange = argDisplayOrSetString("randomString", comArgState, &progVars->randomString, message);
@@ -285,11 +376,21 @@ ProgramVars programVars = {
 
 String formatProgVars(long time, ProgramVars progVars) {
   return String(time) + " ledEnable: " + String(progVars.ledEnable) +
+    " useSetFreq: " + String(progVars.useSetFreq) +
     " pwmFreq: " + String(progVars.pwmFreq) +
+    " pwmDuty: " + String(progVars.pwmDutyThou) +
+    " freqDelta: " + String(progVars.freqDelta) +
     " pwmDuty: " + String(progVars.pwmDutyThou) +
     " Random string: '" + progVars.randomString +"'";
 }
-  
+
+double calculateFinalFrequency(RunningAverage rA, double conversionFactor) {
+  float avgPeriod = rA.getAverage();
+  double frequencyAtMotor = 1 / (avgPeriod * FREQ_MEASURE_TIMER_PERIOD);
+  // Apply the conversion factor
+  return frequencyAtMotor * conversionFactor;
+}
+
 
 void setup() {
   // Initialise the serial hardware at baude 115200
@@ -323,6 +424,17 @@ void setup() {
   ledcSetup(LED_PWM_CHANNEL, 500, LED_PWM_RESOLUTION);
   // attach the channel to the GPIO to be controlled
   ledcAttachPin(LED_PIN, LED_PWM_CHANNEL);
+
+
+  // Setup frequency measure timer
+  // sets pin high
+  pinMode(FREQ_MEASURE_PIN, INPUT_PULLUP);
+  // attaches pin to interrupt on Falling Edge
+  attachInterrupt(digitalPinToInterrupt(FREQ_MEASURE_PIN), handleFrequencyMeasureInterrupt, FALLING);
+  // Setup the timer
+  fTimer = timerBegin(FREQ_MEASURE_TIMER, FREQ_MEASURE_TIMER_PRESCALAR, FREQ_MEASURE_TIMER_COUNT_UP);
+  // Start the timer
+  timerStart(fTimer);
 }
  
 void loop() {
@@ -374,6 +486,14 @@ void loop() {
   }
 
   // Do realtime things
+  // Calculate the frequency
+  if (programVars.useSetFreq) {
+    programVars.pwmFreq = programVars.useSetFreq;
+  } else if (fAdded == true) {
+    programVars.pwmFreq = calculateFinalFrequency(frequencyRA, programVars.freqConversionFactor) + programVars.freqDelta;
+  }
+
+
   // While there are characters in the Serial buffer
   // read them in one at a time into sBuffer
   // We need to go via char probably due to implicit type conversions
@@ -387,8 +507,10 @@ void loop() {
     char inChar = SerialBT.read();
     serialBuffer += inChar;
   }
- 
+
+
   // Wait 50 ms
+  // ooooo, gross! Don't do that. naa fk ya
   delay(50);
 }
 
