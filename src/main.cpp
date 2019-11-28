@@ -20,7 +20,6 @@
  * 
  **/
 #include "BluetoothSerial.h"
-#include "RunningAverage.h"
 
 // Argument type defines
 #define ARGUMENT_TYPE_NONE            0
@@ -30,23 +29,26 @@
 
 // Defines
 // Motor to Zeo rotation conversion factor
-#define MOTOR_ZEO_GEARING_FACTOR      0.25
+#define MOTOR_ZEO_GEARING_FACTOR      0.26
 // The 'pin' the LED is on - In the case of NodeMCU pin2 is the onboard led
-#define LED_PIN                       2
+#define LED_ONBOARD_PIN               2
+#define LED_PIN                       12
 // DEVKIT V1 uses pin 23
 // #define LED_PIN               23
 // The PWM channel for the LED 0 to 15
 #define LED_PWM_CHANNEL               0
 // PWM resolution in bits
 #define LED_PWM_RESOLUTION            8
+// PWM inital duty
+#define LED_PWM_INITAL_DUTY           60
 
 // Frequency measure
-#define FREQ_MEASURE_PIN              20
+#define FREQ_MEASURE_PIN              19
 #define FREQ_MEASURE_TIMER            1
 #define FREQ_MEASURE_TIMER_PRESCALAR  80
 #define FREQ_MEASURE_TIMER_COUNT_UP   true
 #define FREQ_MEASURE_TIMER_PERIOD     FREQ_MEASURE_TIMER_PRESCALAR/F_CPU
-#define FREQ_MEASUER_SAMPLE_NUM       16
+#define FREQ_MEASUER_SAMPLE_NUM       64
 // this returns a pointer to the hw_timer_t global variable
 // 0 = first timer
 // 80 is prescaler so 80MHZ divided by 80 = 1MHZ signal ie 0.000001 of a second
@@ -73,12 +75,18 @@ void IRAM_ATTR onTimer(){
 /** Timer for measuring freq **/
 volatile uint64_t StartValue;                     // First interrupt value
 bool fAdded = false;
+// Our own Ring Buffer
+uint8_t ringIndex = 0;
+uint64_t myRing[FREQ_MEASUER_SAMPLE_NUM] = {0};
+// average freq intermediate values as globals. Bite me!
+uint64_t sumPeriod;
+float avgPeriod;
+// prev freq for freq compare
+long prevFreq = 0;
 
 hw_timer_t * fTimer = NULL;                       // pointer to a variable of type hw_timer_t 
 portMUX_TYPE fTimerMux = portMUX_INITIALIZER_UNLOCKED;  // synchs between maon cose and interrupt?
 
-// Setup the running average
-RunningAverage frequencyRA(FREQ_MEASUER_SAMPLE_NUM);
 
 // Digital Event Interrupt
 // Enters on falling edge in this example
@@ -86,12 +94,20 @@ RunningAverage frequencyRA(FREQ_MEASUER_SAMPLE_NUM);
 void IRAM_ATTR handleFrequencyMeasureInterrupt()
 {
   portENTER_CRITICAL_ISR(&fTimerMux);
+      // uint8_t blah = 8;
       // value of timer at interrupt
       uint64_t TempVal= timerRead(fTimer);
-      // Add period to RunningAverage, period is in number of FREQ_MEASURE_TIMER_PERIOD
-      // Note: Is timer overflow safe
-      frequencyRA.addValue(TempVal - StartValue);
-      // puts latest reading as start for next calculation
+      if (ringIndex == FREQ_MEASUER_SAMPLE_NUM -1 ) {
+        ringIndex = 0;
+      } else {
+        ringIndex++;
+      }
+      // // Add period to RunningAverage, period is in number of FREQ_MEASURE_TIMER_PERIOD
+      // // Note: Is timer overflow safe
+      // This one MOFO's
+      myRing[ringIndex]= TempVal - StartValue;
+      // frequencyRA.addValue(TempVal - StartValue);
+      // // puts latest reading as start for next calculation
       StartValue = TempVal;
       fAdded = true;
   portEXIT_CRITICAL_ISR(&fTimerMux);
@@ -123,7 +139,7 @@ ProgramVars programVars = {
   0,      // pwmFreq
   0,      // setFreq
   false,  // useSetFreq
-  100,    // pwmDutyThou
+  LED_PWM_INITAL_DUTY,      // pwmDutyThou
   0,      // freqDelta
   MOTOR_ZEO_GEARING_FACTOR, // freqConversionFactor
   true,   // ledEnable
@@ -376,7 +392,7 @@ ProgramVars programVars = {
 
 String formatProgVars(long time, ProgramVars progVars) {
   return String(time) + " ledEnable: " + String(progVars.ledEnable) +
-    " useSetFreq: " + String(progVars.useSetFreq) +
+    " setFreq: " + String(progVars.setFreq) +
     " pwmFreq: " + String(progVars.pwmFreq) +
     " pwmDuty: " + String(progVars.pwmDutyThou) +
     " freqDelta: " + String(progVars.freqDelta) +
@@ -384,8 +400,7 @@ String formatProgVars(long time, ProgramVars progVars) {
     " Random string: '" + progVars.randomString +"'";
 }
 
-double calculateFinalFrequency(RunningAverage rA, double conversionFactor) {
-  float avgPeriod = rA.getAverage();
+double calculateFinalFrequency(float avgPeriod, double conversionFactor) {
   double frequencyAtMotor = 1 / (avgPeriod * FREQ_MEASURE_TIMER_PERIOD);
   // Apply the conversion factor
   return frequencyAtMotor * conversionFactor;
@@ -423,12 +438,13 @@ void setup() {
   // ledcSetup(LED_PWM_CHANNEL, programVars.pwmFreq, LED_PWM_RESOLUTION);
   ledcSetup(LED_PWM_CHANNEL, 500, LED_PWM_RESOLUTION);
   // attach the channel to the GPIO to be controlled
+  ledcAttachPin(LED_ONBOARD_PIN, LED_PWM_CHANNEL);
   ledcAttachPin(LED_PIN, LED_PWM_CHANNEL);
 
 
   // Setup frequency measure timer
   // sets pin high
-  pinMode(FREQ_MEASURE_PIN, INPUT_PULLUP);
+  pinMode(FREQ_MEASURE_PIN, INPUT);
   // attaches pin to interrupt on Falling Edge
   attachInterrupt(digitalPinToInterrupt(FREQ_MEASURE_PIN), handleFrequencyMeasureInterrupt, FALLING);
   // Setup the timer
@@ -454,12 +470,31 @@ void loop() {
       serialBuffer = "";
     }
 
-    if (programVars.stateChange == true) {
+    if (programVars.stateChange == true || fAdded == true) {
+      // reset c flhangeag
+      fAdded = false;
+      programVars.stateChange = false;
+
+
+      if (programVars.useSetFreq) {
+        programVars.pwmFreq = programVars.setFreq;
+      } else {
+        // calculate the frequency from the average period
+        sumPeriod = 0;
+        for (int i = 0; i < FREQ_MEASUER_SAMPLE_NUM; ++i)
+        {
+            sumPeriod += myRing[i];
+        }
+        avgPeriod = ((float)sumPeriod)/FREQ_MEASUER_SAMPLE_NUM; //or cast sum to double before division
+        programVars.pwmFreq = calculateFinalFrequency(avgPeriod, programVars.freqConversionFactor) + programVars.freqDelta;
+      }
+
       messages = "Setting PWM duty to: " + String(programVars.pwmDutyThou) + \
-        " Frequency to: " + String(programVars.pwmFreq);
+        " Frequency to: " + String(programVars.pwmFreq) + \
+        " User set freq to: " + String(programVars.setFreq);
+
       Serial.println(messages);
       SerialBT.println(messages);
-      ledcWriteTone(LED_PWM_CHANNEL, programVars.pwmFreq);
       // We need to change duty to 0 if LED is disabled
       if (programVars.ledEnable == true) {
         ledcWrite(LED_PWM_CHANNEL, programVars.pwmDutyThou);
@@ -467,7 +502,6 @@ void loop() {
         messages = "Disabling LED";
         ledcWrite(LED_PWM_CHANNEL, 0);
       }
-      programVars.stateChange = false;
     }
 
     // Timer fires every quarter second, so every four tickes
@@ -475,6 +509,17 @@ void loop() {
     if (timestampQuarter%4 == 0) {
       timestamp++;
       timestampQuarter = 0;
+
+      // Change the PWM freq if it has changed
+      if ( programVars.pwmFreq != prevFreq) {
+        ledcWriteTone(LED_PWM_CHANNEL, programVars.pwmFreq);
+        prevFreq = programVars.pwmFreq;
+        if (programVars.ledEnable == true) {
+          ledcWrite(LED_PWM_CHANNEL, programVars.pwmDutyThou);
+        } else {
+          ledcWrite(LED_PWM_CHANNEL, 0);
+        }
+      }
 
       // print logging info if enabled
       if (programVars.logging == true) {
@@ -487,11 +532,12 @@ void loop() {
 
   // Do realtime things
   // Calculate the frequency
-  if (programVars.useSetFreq) {
-    programVars.pwmFreq = programVars.useSetFreq;
-  } else if (fAdded == true) {
-    programVars.pwmFreq = calculateFinalFrequency(frequencyRA, programVars.freqConversionFactor) + programVars.freqDelta;
-  }
+  // programVars.pwmFreq = programVars.useSetFreq;
+  // if (programVars.useSetFreq) {
+  //   programVars.pwmFreq = programVars.useSetFreq;
+  // } else if (fAdded == true) {
+  //   programVars.pwmFreq = calculateFinalFrequency(frequencyRA, programVars.freqConversionFactor) + programVars.freqDelta;
+  // }
 
 
   // While there are characters in the Serial buffer
@@ -511,7 +557,7 @@ void loop() {
 
   // Wait 50 ms
   // ooooo, gross! Don't do that. naa fk ya
-  delay(50);
+  // delay(50);
 }
 
 // #include "TimerOne.h"
