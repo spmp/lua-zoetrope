@@ -42,7 +42,7 @@
 // PWM resolution in bits
 #define LED_PWM_RESOLUTION            8
 // PWM inital duty
-#define LED_PWM_INITAL_DUTY           60
+#define LED_PWM_INITAL_DUTY           32
 
 // Frequency measure
 #define FREQ_MEASURE_PIN              19
