@@ -21,6 +21,8 @@
  **/
 #include "BluetoothSerial.h"
 
+#define COOL_PERIOD_SECONDS           120
+
 // Argument type defines
 #define ARGUMENT_TYPE_NONE            0
 #define ARGUMENT_TYPE_LONG            1
@@ -128,6 +130,7 @@ struct ProgramVars {
   bool    useSetFreq;
   long    pwmDutyThou;
   double  freqDelta;
+  bool    runVariableDelta;
   double  freqConversionFactor;
   bool    ledEnable;
   bool    logging;
@@ -141,6 +144,7 @@ ProgramVars programVars = {
   false,  // useSetFreq
   LED_PWM_INITAL_DUTY,      // pwmDutyThou
   1.0,    // freqDelta
+  true,    // runVariableDelta
   MOTOR_ZEO_GEARING_FACTOR, // freqConversionFactor
   true,   // ledEnable
   false,  //  logging
@@ -354,6 +358,7 @@ ProgramVars programVars = {
         String("'p': Whether to measure frequency or use frequency set by 'p'\n") +
         String("'d': PWM duty cycle 0-reolution max (ie 255 for 8 bit)\n") +
         String("'m': Frequency modifier to apply to measured frequency as percentage\n") +
+        String("'v': Run variable delta programme Enable (1), or disable (0)\n") +
         String("'r': Rotational gearing ratio * 1000 \n") +
         String("'l': Enable (1), or disable (0) led\n") +
         String("'L': Enable (1), or disable (0) logging");
@@ -369,6 +374,9 @@ ProgramVars programVars = {
       break;
     case 'm':
       progVars->stateChange = argDisplayOrSetDoubleFromLong("freqDelta", comArgState, &progVars->freqDelta, 100, message);
+      break;
+    case 'v':
+      progVars->stateChange = argDisplayOrSetBoolean("runVariableDelta", comArgState, &progVars->runVariableDelta, message);
       break;
     case 'r':
       progVars->stateChange = argDisplayOrSetDoubleFromLong("freqConversionFactor", comArgState, &progVars->freqConversionFactor, 1000, message);
@@ -404,6 +412,91 @@ double calculateFinalFrequency(float avgPeriod, double conversionFactor) {
   double frequencyAtMotor = 1 / (avgPeriod * FREQ_MEASURE_TIMER_PERIOD);
   // Apply the conversion factor
   return frequencyAtMotor * conversionFactor;
+}
+
+/** This function modifies the delta/modifier based on the timestamp in seconds
+ * on a cycle (hence the modulo)
+ **/
+void makeShitCoolAgain(uint32_t timestamp, ProgramVars *programVars) {
+  uint32_t relativeTime = timestamp % COOL_PERIOD_SECONDS;
+
+  switch(relativeTime) {
+    case 0:
+      programVars->freqDelta = 1.0;
+      break;
+    case 1:
+      programVars->freqDelta = 1.1;
+      break;
+    case 2:
+      programVars->freqDelta = 1.2;
+      break;
+    case 3:
+      programVars->freqDelta = 1.3;
+      break;
+    case 4:
+      programVars->freqDelta = 1.4;
+      break;
+    case 5:
+      programVars->freqDelta = 1.5;
+      break;
+    case 6:
+      programVars->freqDelta = 1.6;
+      break;
+    case 7:
+      programVars->freqDelta = 1.7;
+      break;
+    case 8:
+      programVars->freqDelta = 1.8;
+      break;
+    case 9:
+      programVars->freqDelta = 1.9;
+      break;
+    case 10:
+      programVars->freqDelta = 2.0;
+      break;
+    case 30:
+      programVars->freqDelta = 1.9;
+      break;
+    case 31:
+      programVars->freqDelta = 1.8;
+      break;
+    case 32:
+      programVars->freqDelta = 1.7;
+      break;
+    case 33:
+      programVars->freqDelta = 1.6;
+      break;
+    case 34:
+      programVars->freqDelta = 1.5;
+      break;
+    case 35:
+      programVars->freqDelta = 1.6;
+      break;
+    case 36:
+      programVars->freqDelta = 1.4;
+      break;
+    case 37:
+      programVars->freqDelta = 1.3;
+      break;
+    case 38:
+      programVars->freqDelta = 1.2;
+      break;
+    case 39:
+      programVars->freqDelta = 1.1;
+      break;
+    case 40:
+      programVars->freqDelta = 1.0;
+      break;
+    case 70:
+      programVars->freqDelta = 1.5;
+      break;
+    case 73:
+      programVars->freqDelta = 2.0;
+      break;
+    case 76:
+      programVars->freqDelta = 1.0;
+      break;
+  }
 }
 
 
@@ -509,6 +602,10 @@ void loop() {
     if (timestampQuarter%4 == 0) {
       timestamp++;
       timestampQuarter = 0;
+
+      if (programVars.runVariableDelta == true) {
+        makeShitCoolAgain(timestamp, &programVars);
+      }
 
       // Change the PWM freq if it has changed
       if ( programVars.pwmFreq != prevFreq) {
