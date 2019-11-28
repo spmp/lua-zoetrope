@@ -127,7 +127,7 @@ struct ProgramVars {
   long    setFreq;
   bool    useSetFreq;
   long    pwmDutyThou;
-  long    freqDelta;
+  double  freqDelta;
   double  freqConversionFactor;
   bool    ledEnable;
   bool    logging;
@@ -140,7 +140,7 @@ ProgramVars programVars = {
   0,      // setFreq
   false,  // useSetFreq
   LED_PWM_INITAL_DUTY,      // pwmDutyThou
-  0,      // freqDelta
+  1.0,    // freqDelta
   MOTOR_ZEO_GEARING_FACTOR, // freqConversionFactor
   true,   // ledEnable
   false,  //  logging
@@ -350,25 +350,25 @@ ProgramVars programVars = {
       progVars->stateChange = false;
       *message = String("Help: \n") + 
         String("Commands will return current value if no argument given, and set to value if given\n") +
-        String("'p': PWM frequency in HZ\n") +
-        String("'P': Whether to measure frequency or use frequency set by 'p'\n") +
+        String("'f': PWM frequency in HZ\n") +
+        String("'p': Whether to measure frequency or use frequency set by 'p'\n") +
         String("'d': PWM duty cycle 0-reolution max (ie 255 for 8 bit)\n") +
-        String("'D': Frequency delta to apply to measured frequency in Hz\n") +
+        String("'m': Frequency modifier to apply to measured frequency as percentage\n") +
         String("'r': Rotational gearing ratio * 1000 \n") +
         String("'l': Enable (1), or disable (0) led\n") +
         String("'L': Enable (1), or disable (0) logging");
       break;
-    case 'p':
+    case 'f':
       progVars->stateChange = argDisplayOrSetLong("useSetFreq", comArgState, &progVars->setFreq, message);
       break;
-    case 'P':
+    case 'p':
       progVars->stateChange = argDisplayOrSetBoolean("useSetFreq", comArgState, &progVars->useSetFreq, message);
       break;
     case 'd':
       progVars->stateChange = argDisplayOrSetLong("pwmDuty", comArgState, &progVars->pwmDutyThou, message);
       break;
-    case 'D':
-      progVars->stateChange = argDisplayOrSetLong("freqDelta", comArgState, &progVars->freqDelta, message);
+    case 'm':
+      progVars->stateChange = argDisplayOrSetDoubleFromLong("freqDelta", comArgState, &progVars->freqDelta, 100, message);
       break;
     case 'r':
       progVars->stateChange = argDisplayOrSetDoubleFromLong("freqConversionFactor", comArgState, &progVars->freqConversionFactor, 1000, message);
@@ -486,7 +486,7 @@ void loop() {
             sumPeriod += myRing[i];
         }
         avgPeriod = ((float)sumPeriod)/FREQ_MEASUER_SAMPLE_NUM; //or cast sum to double before division
-        programVars.pwmFreq = calculateFinalFrequency(avgPeriod, programVars.freqConversionFactor) + programVars.freqDelta;
+        programVars.pwmFreq = calculateFinalFrequency(avgPeriod, programVars.freqConversionFactor) * programVars.freqDelta;
       }
 
       messages = "Setting PWM duty to: " + String(programVars.pwmDutyThou) + \
