@@ -4,11 +4,14 @@
  * It includes:
  *  * Bluetooth serial
  *  * Bluetooth serial input
- *  * Flashing LED
- *  * Can set frequncy and ducty cycle from bluetooth serial
+ *  * Rotational frequency detection
+ *  * Synchronous flashing LED
+ *  * Time based modification to flashing frequency (as function of rotational frequency)
+ *  * Can set frequency, ducty cycle, offset, rotational conversion factor, and more from bluetooth serial
+ * 
  * TODO (For you):
- *  1. Persisting settings to permenant memory when updated
- *  2. Inclusion of RPM sensing code
+ *  1. Change frequeny input to double rather than int
+ *  2. Persisting settings to permenant memory when updated
  * 
  * Some interesting links:
  * MMA: https://www.baldengineer.com/measure-pwm-current.html
@@ -17,6 +20,8 @@
  * https://esp32.com/viewtopic.php?t=6533
  * 
  * TODO: Allow choice between fixed/set PWM freq and measured
+ * 
+ * 
  * 
  **/
 #include "BluetoothSerial.h"
@@ -56,6 +61,11 @@
 // 80 is prescaler so 80MHZ divided by 80 = 1MHZ signal ie 0.000001 of a second
 // true - counts up
 
+// Bounds within which to consider the previous and current
+// freqency the same. Comparing doubles/floats on equality is never going to work...
+// Instead treat equality as: abs(a-b) > bound
+#define FREQ_COMPARE_BOUNDS           0.0001
+
 //Timers and counters and things
 /** Timer and process control **/
 uint32_t timestamp = 0;
@@ -82,9 +92,9 @@ uint8_t ringIndex = 0;
 uint64_t myRing[FREQ_MEASUER_SAMPLE_NUM] = {0};
 // average freq intermediate values as globals. Bite me!
 uint64_t sumPeriod;
-float avgPeriod;
+double avgPeriod;
 // prev freq for freq compare
-long prevFreq = 0;
+double prevFreq = 0.0;
 
 hw_timer_t * fTimer = NULL;                       // pointer to a variable of type hw_timer_t 
 portMUX_TYPE fTimerMux = portMUX_INITIALIZER_UNLOCKED;  // synchs between maon cose and interrupt?
@@ -125,7 +135,7 @@ String messages;
 // A 'struct' is an object containing other variables
 // This defines the struct data type
 struct ProgramVars {
-  long    pwmFreq;
+  double  pwmFreq;
   long    setFreq;
   bool    useSetFreq;
   long    pwmDutyThou;
@@ -408,7 +418,7 @@ String formatProgVars(long time, ProgramVars progVars) {
     " Random string: '" + progVars.randomString +"'";
 }
 
-double calculateFinalFrequency(float avgPeriod, double conversionFactor) {
+double calculateFinalFrequency(double avgPeriod, double conversionFactor) {
   double frequencyAtMotor = 1 / (avgPeriod * FREQ_MEASURE_TIMER_PERIOD);
   // Apply the conversion factor
   return frequencyAtMotor * conversionFactor;
@@ -496,6 +506,20 @@ void makeShitCoolAgain(uint32_t timestamp, ProgramVars *programVars) {
     case 76:
       programVars->freqDelta = 1.0;
       break;
+    // OK, lets try something crazy!
+    // So you want a sine wave... alg..
+    // We want the sine wave to complete in the given time, so
+    // 120-90 = 30 must be mapped to 360.. i.e x12
+    // But this only happens evey second... damn...
+    // I would recommend you put this in a _way_ faster for smoother transitions.
+    // There is a bit of process control overhaul that is needed anyway.
+    // OR, make the transitions really slow, then good as...
+    case 90 ... 120:
+      programVars->freqDelta = sin(
+        (relativeTime-90)*12
+      );
+      break;
+
   }
 }
 
@@ -578,7 +602,7 @@ void loop() {
         {
             sumPeriod += myRing[i];
         }
-        avgPeriod = ((float)sumPeriod)/FREQ_MEASUER_SAMPLE_NUM; //or cast sum to double before division
+        avgPeriod = ((double)sumPeriod)/FREQ_MEASUER_SAMPLE_NUM; //or cast sum to double before division
         programVars.pwmFreq = calculateFinalFrequency(avgPeriod, programVars.freqConversionFactor) * programVars.freqDelta;
       }
 
@@ -607,8 +631,8 @@ void loop() {
         makeShitCoolAgain(timestamp, &programVars);
       }
 
-      // Change the PWM freq if it has changed
-      if ( programVars.pwmFreq != prevFreq) {
+      // Change the PWM freq if it has changed within the bounds
+      if ( abs(programVars.pwmFreq - prevFreq) > FREQ_COMPARE_BOUNDS) {
         ledcWriteTone(LED_PWM_CHANNEL, programVars.pwmFreq);
         prevFreq = programVars.pwmFreq;
         if (programVars.ledEnable == true) {
