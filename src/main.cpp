@@ -26,7 +26,7 @@
  **/
 #include "BluetoothSerial.h"
 
-#define COOL_PERIOD_SECONDS           120
+#define COOL_PERIOD_SECONDS           400
 
 // Argument type defines
 #define ARGUMENT_TYPE_NONE            0
@@ -36,7 +36,11 @@
 
 // Defines
 // Motor to Zeo rotation conversion factor
-#define MOTOR_ZEO_GEARING_FACTOR      0.26
+#define MOTOR_ZEO_GEARING_FACTOR      4.19
+// to move to slower sensor I have multiplied this factor by 14.099
+// average motor sensor is 17.019 ms avare head sensor is 239.95ms
+// #define MOTOR_ZEO_GEARING_FACTOR      0.29 this is pretty good for the orange belt
+// #define MOTOR_ZEO_GEARING_FACTOR      0.275 this is using the elastic band
 // The 'pin' the LED is on - In the case of NodeMCU pin2 is the onboard led
 #define LED_ONBOARD_PIN               2
 #define LED_PIN                       12
@@ -47,7 +51,7 @@
 // PWM resolution in bits
 #define LED_PWM_RESOLUTION            8
 // PWM inital duty
-#define LED_PWM_INITAL_DUTY           32
+#define LED_PWM_INITAL_DUTY           5
 
 // Frequency measure
 #define FREQ_MEASURE_PIN              19
@@ -55,7 +59,7 @@
 #define FREQ_MEASURE_TIMER_PRESCALAR  80
 #define FREQ_MEASURE_TIMER_COUNT_UP   true
 #define FREQ_MEASURE_TIMER_PERIOD     FREQ_MEASURE_TIMER_PRESCALAR/F_CPU
-#define FREQ_MEASUER_SAMPLE_NUM       64
+#define FREQ_MEASUER_SAMPLE_NUM       128
 // this returns a pointer to the hw_timer_t global variable
 // 0 = first timer
 // 80 is prescaler so 80MHZ divided by 80 = 1MHZ signal ie 0.000001 of a second
@@ -435,77 +439,358 @@ void makeShitCoolAgain(uint32_t timestamp, ProgramVars *programVars) {
       programVars->freqDelta = 1.0;
       break;
     case 1:
-      programVars->freqDelta = 1.1;
-      break;
-    case 2:
-      programVars->freqDelta = 1.2;
-      break;
-    case 3:
-      programVars->freqDelta = 1.3;
-      break;
-    case 4:
-      programVars->freqDelta = 1.4;
-      break;
-    case 5:
-      programVars->freqDelta = 1.5;
-      break;
-    case 6:
-      programVars->freqDelta = 1.6;
-      break;
-    case 7:
-      programVars->freqDelta = 1.7;
-      break;
-    case 8:
-      programVars->freqDelta = 1.8;
-      break;
-    case 9:
-      programVars->freqDelta = 1.9;
-      break;
-    case 10:
-      programVars->freqDelta = 2.0;
-      break;
-    case 30:
-      programVars->freqDelta = 1.9;
-      break;
-    case 31:
-      programVars->freqDelta = 1.8;
-      break;
-    case 32:
-      programVars->freqDelta = 1.7;
-      break;
-    case 33:
-      programVars->freqDelta = 1.6;
-      break;
-    case 34:
-      programVars->freqDelta = 1.5;
-      break;
-    case 35:
-      programVars->freqDelta = 1.6;
-      break;
-    case 36:
-      programVars->freqDelta = 1.4;
-      break;
-    case 37:
-      programVars->freqDelta = 1.3;
-      break;
-    case 38:
-      programVars->freqDelta = 1.2;
-      break;
-    case 39:
-      programVars->freqDelta = 1.1;
-      break;
-    case 40:
       programVars->freqDelta = 1.0;
       break;
-    case 70:
+    case 102:
+      programVars->freqDelta = 1.1;
+      break;
+    case 103:
+      programVars->freqDelta = 1.2;
+      break;
+    case 104:
+      programVars->freqDelta = 1.3;
+      break;
+    case 105:
+      programVars->freqDelta = 1.4;
+      break;
+    case 106:
       programVars->freqDelta = 1.5;
       break;
-    case 73:
+    case 107:
+      programVars->freqDelta = 1.6;
+      break;
+    case 108:
+      programVars->freqDelta = 1.7;
+      break;
+    case 109:
+      programVars->freqDelta = 1.8;
+      break;
+    case 110:
+      programVars->freqDelta = 1.9;
+      break;
+    case 111:
       programVars->freqDelta = 2.0;
       break;
-    case 76:
+    case 112:
+      programVars->freqDelta = 2.0;
+      break;
+    case 113:
+      programVars->freqDelta = 2.0;
+      break;
+    case 114:
+      programVars->freqDelta = 2.0;
+      break;
+    case 115:
+      programVars->freqDelta = 2.0;
+      break;
+    case 116:
+      programVars->freqDelta = 2.0;
+      break;
+    case 117:
+      programVars->freqDelta = 2.0;
+      break;
+    case 118:
+      programVars->freqDelta = 2.0;
+      break;
+    case 119:
+      programVars->freqDelta = 2.0;
+      break;
+    case 120:
+      programVars->freqDelta = 2.0;
+      break;
+    case 121:
+      programVars->freqDelta = 2.0;
+      break;
+    case 122:
+      programVars->freqDelta = 2.0;
+      break;
+    case 123:
+      programVars->freqDelta = 2.0;
+      break;
+    case 124:
+      programVars->freqDelta = 2.0;
+      break;
+    case 125:
+      programVars->freqDelta = 2.0;
+      break;
+    case 126:
+      programVars->freqDelta = 2.0;
+      break;
+    case 127:
+      programVars->freqDelta = 2.0;
+      break;
+    case 128:
+      programVars->freqDelta = 2.0;
+      break;
+    case 129:
+      programVars->freqDelta = 2.0;
+      break;
+    case 130:
+      programVars->freqDelta = 2.1;
+      break;
+    case 131:
+      programVars->freqDelta = 2.2;
+      break;
+    case 132:
+      programVars->freqDelta = 2.3;
+      break;
+    case 133:
+      programVars->freqDelta = 2.4;
+      break;
+    case 134:
+      programVars->freqDelta = 2.5;
+      break;
+    case 135:
+      programVars->freqDelta = 2.6;
+      break;
+    case 136:
+      programVars->freqDelta = 2.7;
+      break;
+    case 137:
+      programVars->freqDelta = 2.8;
+      break;
+    case 138:
+      programVars->freqDelta = 2.9;
+      break;
+    case 139:
+      programVars->freqDelta = 3.0;
+      break;
+    case 140:
+      programVars->freqDelta = 3.0;
+      break;
+    case 141:
+      programVars->freqDelta = 3.0;
+      break;
+    case 142:
+      programVars->freqDelta = 3.0;
+      break;
+    case 143:
+      programVars->freqDelta = 3.0;
+      break;
+    case 144:
+      programVars->freqDelta = 3.0;
+      break;
+    case 145:
+      programVars->freqDelta = 3.0;
+      break;
+    case 146:
+      programVars->freqDelta = 3.0;
+      break;
+    case 147:
+      programVars->freqDelta = 3.0;
+      break;
+    case 148:
+      programVars->freqDelta = 3.0;
+      break;
+    case 149:
+      programVars->freqDelta = 3.0;
+      break;
+    case 150:
+      programVars->freqDelta = 3.0;
+      break;
+    case 151:
+      programVars->freqDelta = 3.1;
+      break;
+    case 152:
+      programVars->freqDelta = 3.2;
+      break;
+    case 153:
+      programVars->freqDelta = 3.3;
+      break;
+    case 154:
+      programVars->freqDelta = 3.3;
+      break;
+    case 155:
+      programVars->freqDelta = 3.4;
+      break;
+    case 156:
+      programVars->freqDelta = 3.5;
+      break;
+    case 157:
+      programVars->freqDelta = 3.6;
+      break;
+    case 158:
+      programVars->freqDelta = 3.7;
+      break;
+    case 159:
+      programVars->freqDelta = 3.8;
+      break;
+    case 160:
+      programVars->freqDelta = 3.9;
+      break;
+    case 161:
+      programVars->freqDelta = 4.0;
+      break;
+    case 162:
+      programVars->freqDelta = 4.0;
+      break;
+    case 163:
+      programVars->freqDelta = 4.0;
+      break;
+    case 164:
+      programVars->freqDelta = 4.0;
+      break;
+    case 165:
+      programVars->freqDelta = 4.0;
+      break;
+    case 166:
+      programVars->freqDelta = 4.0;
+      break;
+    case 167:
+      programVars->freqDelta = 4.0;
+      break;
+    case 168:
+      programVars->freqDelta = 4.0;
+      break;
+    case 169:
+      programVars->freqDelta = 4.0;
+      break;
+    case 170:
+      programVars->freqDelta = 4.0;
+      break;
+    case 171:
+      programVars->freqDelta = 4.0;
+      break;
+    case 172:
+      programVars->freqDelta = 4.0;
+      break;
+    case 173:
+      programVars->freqDelta = 4.0;
+      break;
+    case 174:
+      programVars->freqDelta = 4.0;
+      break;
+    case 175:
+      programVars->freqDelta = 4.0;
+      break;
+    case 176:
+      programVars->freqDelta = 4.0;
+      break;
+    case 177:
+      programVars->freqDelta = 4.0;
+      break;
+    case 178:
+      programVars->freqDelta = 4.0;
+      break;
+    case 179:
+      programVars->freqDelta = 4.0;
+      break;
+    case 180:
+      programVars->freqDelta = 4.0;
+      break;
+    case 181:
+      programVars->freqDelta = 3.9;
+      break;
+    case 182:
+      programVars->freqDelta = 3.8;
+      break;
+    case 183:
+      programVars->freqDelta = 3.5;
+      break;
+    case 184:
+      programVars->freqDelta = 3.2;
+      break;
+    case 185:
+      programVars->freqDelta = 3.0;
+      break;
+    case 186:
+      programVars->freqDelta = 2.9;
+      break;
+    case 187:
+      programVars->freqDelta = 2.7;
+      break;
+    case 188:
+      programVars->freqDelta = 2.4;
+      break;
+    case 189:
+      programVars->freqDelta = 2.3;
+      break;
+    case 190:
+      programVars->freqDelta = 2.2;
+      break;
+    case 191:
+      programVars->freqDelta = 2.1;
+      break;
+    case 192:
+      programVars->freqDelta = 1.9;
+      break;
+    case 193:
+      programVars->freqDelta = 1.8;
+      break;
+    case 194:
+      programVars->freqDelta = 1.7;
+      break;
+    case 195:
+      programVars->freqDelta = 1.6;
+      break;
+    case 196:
+      programVars->freqDelta = 1.5;
+      break;
+    case 197:
+      programVars->freqDelta = 1.4;
+      break;
+    case 198:
+      programVars->freqDelta = 1.3;
+      break;
+    case 199:
+      programVars->freqDelta = 1.2;
+      break;
+    case 200:
+      programVars->freqDelta = 1.1;
+      break;
+    case 210:
       programVars->freqDelta = 1.0;
       break;
+    case 215:
+      programVars->freqDelta = 1.95;
+      break;
+    case 220:
+      programVars->freqDelta = 1.9;
+      break;
+    case 230:
+      programVars->freqDelta = 1.8;
+      break;
+    case 235:
+      programVars->freqDelta = 1.7;
+      break;
+    case 240:
+      programVars->freqDelta = 1.6;
+      break;
+    case 245:
+      programVars->freqDelta = 1.5;
+      break;
+    case 250:
+      programVars->freqDelta = 1.4;
+      break;
+    case 260:
+      programVars->freqDelta = 1.3;
+      break;
+    case 270:
+      programVars->freqDelta = 1.2;
+      break;
+    case 280:
+      programVars->freqDelta = 1.1;
+      break;
+    case 290:
+      programVars->freqDelta = 1.05;
+      break;
+    case 300:
+      programVars->freqDelta = 1.01;
+      break;
+    case 330:
+      programVars->freqDelta = 1;
+      break;
+    case 340:
+      programVars->freqDelta = 5;
+      break;
+      case 350:
+      programVars->freqDelta = 1;
+      break;
+      case 360:
+      programVars->freqDelta = 5;
+      break;
+      case 370:
+      programVars->freqDelta = 1;
     // OK, lets try something crazy!
     // So you want a sine wave... alg..
     // We want the sine wave to complete in the given time, so
@@ -514,12 +799,12 @@ void makeShitCoolAgain(uint32_t timestamp, ProgramVars *programVars) {
     // I would recommend you put this in a _way_ faster for smoother transitions.
     // There is a bit of process control overhaul that is needed anyway.
     // OR, make the transitions really slow, then good as...
-    case 90 ... 120:
-      programVars->freqDelta = sin(
-        (relativeTime-90)*12
-      );
-      break;
-
+    // REDACTED in merge, but you _still can_ do this 8)
+    // case 90 ... 120:
+    //   programVars->freqDelta = sin(
+    //     (relativeTime-90)*12
+    //   );
+    //   break;
   }
 }
 
@@ -773,3 +1058,4 @@ void loop() {
 //     // attachInterrupt(0, rps_counter, FALLING); //enable interrupt
 //   }
 // }
+
